@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
@@ -30,6 +30,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(root))
         .route("/todos", get(list_todos))
+        .route("/todos/{id}", get(get_todo))
         .route("/create-todos", post(create_todo))
         .with_state(state);
 
@@ -55,4 +56,41 @@ async fn list_todos(State(state): State<AppState>) -> Json<Vec<Todo>> {
 
     // A `Vec<Todo>` serializes straight to a JSON array (`[]` when empty).
     Json(todos)
+}
+
+// `Path<Uuid>` parses the `{id}` segment from the URL into a typed `Uuid`.
+// If the segment isn't a valid UUID, Axum rejects the request before we run.
+async fn get_todo(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Todo>, StatusCode> {
+    // `.get()` returns Option<&Todo>; `.cloned()` makes an owned Option<Todo>
+    // so the lock can drop at the end of this line.
+    let found = state.todos.lock().unwrap().get(&id).cloned();
+
+    // Ok -> 200 with the todo as JSON; Err -> 404 with no body.
+    match found {
+        Some(todo) => Ok(Json(todo)),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+// Extractors run in order: `State` pulls the shared store, then `Json` reads
+// the request body into a `CreateTodo`. The body extractor must come last.
+async fn create_todo(
+    State(state): State<AppState>,
+    Json(input): Json<CreateTodo>,
+) -> (StatusCode, Json<Todo>) {
+    // Build the server-side record from the client's input.
+    let todo = Todo {
+        id: Uuid::new_v4(),
+        title: input.title,
+        completed: false,
+    };
+
+    // Lock, insert a clone (we still need `todo` to return), then unlock.
+    state.todos.lock().unwrap().insert(todo.id, todo.clone());
+
+    // The tuple tells Axum: send 201 with this JSON body.
+    (StatusCode::CREATED, Json(todo))
 }
