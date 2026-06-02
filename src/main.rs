@@ -1,11 +1,16 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use axum::{extract::State, routing::get, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
 use uuid::Uuid;
 
 mod models;
-use models::Todo;
+use models::{CreateTodo, Todo};
 
 // Shared application state. `Clone` is cheap: cloning only bumps the `Arc`
 // refcount, so every handler shares the *same* underlying map.
@@ -22,7 +27,10 @@ async fn main() {
         todos: Arc::new(Mutex::new(HashMap::new())),
     };
 
-    let app = Router::new().route("/", get(root)).with_state(state);
+    let app = Router::new()
+        .route("/", get(root))
+        .route("/create-todos", post(create_todo))
+        .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
