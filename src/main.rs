@@ -29,6 +29,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
+        .route("/todos", get(list_todos))
         .route("/create-todos", post(create_todo))
         .with_state(state);
 
@@ -44,4 +45,14 @@ async fn root(State(state): State<AppState>) -> String {
     // drops at the end of the expression.
     let count = state.todos.lock().unwrap().len();
     format!("{count} todos stored")
+}
+
+async fn list_todos(State(state): State<AppState>) -> Json<Vec<Todo>> {
+    // `.cloned()` copies each Todo out of the map so we own them in the Vec.
+    // That lets the lock guard drop at the end of this line — we don't hold
+    // the mutex while Axum serializes the response.
+    let todos: Vec<Todo> = state.todos.lock().unwrap().values().cloned().collect();
+
+    // A `Vec<Todo>` serializes straight to a JSON array (`[]` when empty).
+    Json(todos)
 }
